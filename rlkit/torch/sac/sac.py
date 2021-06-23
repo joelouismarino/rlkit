@@ -31,6 +31,9 @@ class SACTrainer(TorchTrainer, LossFunction):
             discount=0.99,
             reward_scale=1.0,
 
+            use_fr=False,
+            fr_weight=1.,
+
             policy_lr=1e-3,
             qf_lr=1e-3,
             optimizer_class=optim.Adam,
@@ -91,6 +94,9 @@ class SACTrainer(TorchTrainer, LossFunction):
         self._n_train_steps_total = 0
         self._need_to_update_eval_statistics = True
         self.eval_statistics = OrderedDict()
+
+        self.use_fr = use_fr
+        self.fr_weight = fr_weight
 
     def train_from_torch(self, batch):
         gt.blank_stamp()
@@ -172,19 +178,45 @@ class SACTrainer(TorchTrainer, LossFunction):
         """
         QF Loss
         """
-        q1_pred = self.qf1(obs, actions)
-        q2_pred = self.qf2(obs, actions)
-        next_dist = self.policy(next_obs)
-        new_next_actions, new_log_pi = next_dist.rsample_and_logprob()
-        new_log_pi = new_log_pi.unsqueeze(-1)
-        target_q_values = torch.min(
-            self.target_qf1(next_obs, new_next_actions),
-            self.target_qf2(next_obs, new_next_actions),
-        ) - alpha * new_log_pi
+        if self.use_fr:
+            q1_pred = self.qf1(obs, actions)
+            q2_pred = self.qf2(obs, actions)
+            next_dist = self.policy(next_obs)
+            new_next_actions, new_log_pi = next_dist.rsample_and_logprob()
+            new_log_pi = new_log_pi.unsqueeze(-1)
+            target_q_values = torch.min(
+                self.qf1(next_obs, new_next_actions),
+                self.qf2(next_obs, new_next_actions),
+            ) - alpha * new_log_pi
 
-        q_target = self.reward_scale * rewards + (1. - terminals) * self.discount * target_q_values
-        qf1_loss = self.qf_criterion(q1_pred, q_target.detach())
-        qf2_loss = self.qf_criterion(q2_pred, q_target.detach())
+            q_target = self.reward_scale * rewards + (1. - terminals) * self.discount * target_q_values
+            qf1_td_loss = self.qf_criterion(q1_pred, q_target.detach())
+            qf2_td_loss = self.qf_criterion(q2_pred, q_target.detach())
+
+            # prior_q1 = self.target_qf1(obs, actions)
+            # prior_q2 = self.target_qf2(obs, actions)
+            # qf1_fr_loss = self.qf_criterion(q1_pred, prior_q1.detach())
+            # qf2_fr_loss = self.qf_criterion(q2_pred, prior_q2.detach())
+            q_prior = 0.5 * (self.target_qf1(obs, actions) + self.target_qf2(obs, actions))
+            qf1_fr_loss = self.qf_criterion(q1_pred, q_prior.detach())
+            qf2_fr_loss = self.qf_criterion(q2_pred, q_prior.detach())
+
+            qf1_loss = qf1_td_loss + self.fr_weight * qf1_fr_loss
+            qf2_loss = qf2_td_loss + self.fr_weight * qf2_fr_loss
+        else:
+            q1_pred = self.qf1(obs, actions)
+            q2_pred = self.qf2(obs, actions)
+            next_dist = self.policy(next_obs)
+            new_next_actions, new_log_pi = next_dist.rsample_and_logprob()
+            new_log_pi = new_log_pi.unsqueeze(-1)
+            target_q_values = torch.min(
+                self.target_qf1(next_obs, new_next_actions),
+                self.target_qf2(next_obs, new_next_actions),
+            ) - alpha * new_log_pi
+
+            q_target = self.reward_scale * rewards + (1. - terminals) * self.discount * target_q_values
+            qf1_loss = self.qf_criterion(q1_pred, q_target.detach())
+            qf2_loss = self.qf_criterion(q2_pred, q_target.detach())
 
         """
         Save some statistics for eval
