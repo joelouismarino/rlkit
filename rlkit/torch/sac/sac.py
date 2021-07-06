@@ -202,6 +202,7 @@ class SACTrainer(TorchTrainer, LossFunction):
                 target_q_values2 = self.qf2(next_obs, new_next_actions) - alpha * new_log_pi
                 q_target1 = self.reward_scale * rewards + (1. - terminals) * self.discount * target_q_values1
                 q_target2 = self.reward_scale * rewards + (1. - terminals) * self.discount * target_q_values2
+                q_target = q_target1
                 qf1_td_loss = self.qf_criterion(q1_pred, q_target1.detach())
                 qf2_td_loss = self.qf_criterion(q2_pred, q_target2.detach())
             elif self.target == 'mean':
@@ -232,7 +233,7 @@ class SACTrainer(TorchTrainer, LossFunction):
             next_dist = self.policy(next_obs)
             new_next_actions, new_log_pi = next_dist.rsample_and_logprob()
             new_log_pi = new_log_pi.unsqueeze(-1)
-            
+
             if self.target == 'min':
                 target_q_values = torch.min(
                     self.qf1(next_obs, new_next_actions),
@@ -246,6 +247,7 @@ class SACTrainer(TorchTrainer, LossFunction):
                 target_q_values2 = self.qf2(next_obs, new_next_actions) - alpha * new_log_pi
                 q_target1 = self.reward_scale * rewards + (1. - terminals) * self.discount * target_q_values1
                 q_target2 = self.reward_scale * rewards + (1. - terminals) * self.discount * target_q_values2
+                q_target = q_target1
                 qf1_loss = self.qf_criterion(q1_pred, q_target1.detach())
                 qf2_loss = self.qf_criterion(q2_pred, q_target2.detach())
             elif self.target == 'mean':
