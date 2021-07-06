@@ -1,4 +1,6 @@
 import gym
+import argparse
+from distutils.util import strtobool
 # from gym.envs.mujoco import HalfCheetahEnv
 
 import rlkit.torch.pytorch_util as ptu
@@ -85,10 +87,20 @@ def experiment(variant):
 
 if __name__ == "__main__":
     # noinspection PyTypeChecker
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--env', type=str, help='env name')
+    parser.add_argument('--use_fr', default=False, type=lambda x:bool(strtobool(x)), help='whether to use FR')
+    parser.add_argument('--fr_weight', default=0., type=float, help='FR weight')
+    parser.add_argument('--device_id', default=None, type=int, help='device to use')
+    parser.add_argument('--target', default='min', type=str, help='target Q processing scheme')
+    parser.add_argument('--prior', default='separate', type=str, help='prior Q processing scheme')
+    args = parser.parse_args()
+
     variant = dict(
         algorithm="SAC",
         version="normal",
-        env_name="HalfCheetah-v2"
+        env_name=args.env,
+        gpu_id=args.device_id,
         layer_size=256,
         replay_buffer_size=int(1E6),
         algorithm_kwargs=dict(
@@ -108,10 +120,14 @@ if __name__ == "__main__":
             qf_lr=3E-4,
             reward_scale=1,
             use_automatic_entropy_tuning=True,
-            use_fr=False,
-            fr_weight=1.,
+            use_fr=args.use_fr,
+            fr_weight=args.fr_weight,
+            target=args.target,
+            prior=args.prior
         ),
     )
+    if variant['gpu_id'] is not None:
+        ptu.set_gpu_mode(True, variant['gpu_id'])
     setup_logger('name-of-experiment', variant=variant)
     # ptu.set_gpu_mode(True)  # optionally set the GPU (default=False)
     experiment(variant)
